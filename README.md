@@ -1,0 +1,6 @@
+IssueClear
+==========
+
+License
+-------
+See `LICENSE`.
