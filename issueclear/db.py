@@ -58,6 +58,26 @@ CREATE TABLE IF NOT EXISTS sync_state (
 """
 
 
+def _normalize_user(user_val):
+    """Return a plain string user login/name given various provider forms.
+
+    Accepts:
+      - string (returned as-is)
+      - dict with 'login' or 'name' or 'displayName'
+      - None / other -> ""
+    """
+    if isinstance(user_val, str):
+        return user_val
+    if isinstance(user_val, dict):
+        return (
+            user_val.get("login")
+            or user_val.get("name")
+            or user_val.get("displayName")
+            or ""
+        )
+    return ""
+
+
 class RepoDatabase:
     def __init__(self, platform: str, owner: str, repo: str):
         self.platform = platform
@@ -116,7 +136,7 @@ class RepoDatabase:
         title = issue_json.get("title")
         body = issue_json.get("body")
         state = issue_json.get("state")
-        user_login = (issue_json.get("user") or {}).get("login")
+        user_login = _normalize_user(issue_json.get("user"))
         created_at = issue_json.get("created_at")
         closed_at = issue_json.get("closed_at")
         comments_count = issue_json.get("comments")
@@ -183,7 +203,7 @@ class RepoDatabase:
         if comment_id is None:
             raise ValueError("Comment JSON missing 'id'")
         body = comment_json.get("body")
-        user_login = (comment_json.get("user") or {}).get("login")
+        user_login = _normalize_user(comment_json.get("user"))
         created_at = comment_json.get("created_at")
         updated_at = comment_json.get("updated_at")
         raw_str = json.dumps(comment_json)

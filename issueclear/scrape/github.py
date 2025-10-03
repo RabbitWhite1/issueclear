@@ -1,16 +1,11 @@
 import os
-import time
+import time  # retained for potential future timing metrics
 from datetime import datetime
 from typing import Iterator, Optional
 
 import requests
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
+from rich.progress import BarColumn  # BarColumn currently unused but kept if needed for future customization
+from issueclear.utils import create_progress, polite_sleep
 
 from issueclear.db import RepoDatabase
 from issueclear.scrape.common import IssueScraper
@@ -20,6 +15,7 @@ GITHUB_API_VERSION = "2022-11-28"
 
 
 class GitHubIssueScraper(IssueScraper):
+    provider_name = "github"
     """GitHub issue & comment scraper with incremental sync support.
 
     All GitHub-specific HTTP operations are encapsulated as methods on this class
@@ -40,7 +36,6 @@ class GitHubIssueScraper(IssueScraper):
         }
         self.owner = owner
         self.repo = repo
-        self.provider_name = "github"
 
     def list_issues(self, since_iso: Optional[str] = None, state: str = "all", per_page: int = 100) -> Iterator[dict]:
         """Unified listing of issues & PRs (optionally updated since a timestamp).
@@ -54,7 +49,8 @@ class GitHubIssueScraper(IssueScraper):
         """
         page = 1
         while True:
-            params = {"state": state, "per_page": per_page, "page": page}
+            # Explicitly sort by updated ascending so incremental sync with a limit is deterministic.
+            params = {"state": state, "per_page": per_page, "page": page, "sort": "updated", "direction": "asc"}
             if since_iso:
                 params["since"] = since_iso
             url = f"{GITHUB_API}/repos/{self.owner}/{self.repo}/issues"
@@ -69,7 +65,7 @@ class GitHubIssueScraper(IssueScraper):
             if len(batch) < per_page:
                 break
             page += 1
-            time.sleep(0.1)
+            polite_sleep(base=0.25)  # courteous pacing for issues listing
 
     def list_comments(self, issue_number: int, since_iso: Optional[str] = None, per_page: int = 100) -> Iterator[dict]:
         page = 1
@@ -89,7 +85,7 @@ class GitHubIssueScraper(IssueScraper):
             if len(data) < per_page:
                 break
             page += 1
-            time.sleep(0.05)
+            polite_sleep(base=0.15)  # slightly faster but still polite for comments
 
     def get_issue_total_count(self, since_iso: Optional[str] = None) -> Optional[int]:
         """Return total number of issues + pull requests, optionally filtered by last updated time.
@@ -153,23 +149,30 @@ class GitHubIssueScraper(IssueScraper):
         except Exception:
             return None
 
-    def incremental_sync(self, db: RepoDatabase):
+    def incremental_sync(self, db: RepoDatabase, limit: Optional[int] = None):
         """Perform incremental sync for this repository into per-repo SQLite db.
 
+        Args:
+            db: RepoDatabase instance.
+            limit: Optional maximum number of issues/PRs to process this run (for very large repos / rate friendliness).
+
         Always displays a Rich progress bar. Returns a dict with processed_issues and last_updated.
+        If limit is provided progress total is min(estimated_total, limit) when an estimate exists.
         """
         last_issue_sync = db.get_last_issue_sync()
         issue_iter = self.list_issues(since_iso=last_issue_sync) if last_issue_sync else self.list_issues()
 
         total_estimate = self.get_issue_total_count(last_issue_sync)
 
-        with Progress(
-            "{task.description}",
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
-            TimeRemainingColumn(),
-        ) as progress:
-            task_id = progress.add_task("Sync Issues", total=total_estimate if total_estimate else None)
+        with create_progress() as progress:
+            display_total = None
+            if total_estimate and limit:
+                display_total = min(total_estimate, limit)
+            elif total_estimate:
+                display_total = total_estimate
+            elif limit:
+                display_total = limit
+            task_id = progress.add_task("Sync Issues", total=display_total)
             max_updated: Optional[str] = last_issue_sync
             processed = 0
             for issue_json in issue_iter:
@@ -177,6 +180,8 @@ class GitHubIssueScraper(IssueScraper):
                 processed += 1
                 if progress is not None:
                     progress.update(task_id, advance=1)
+                if limit and processed >= limit:
+                    break
                 gh_updated = issue_json.get("updated_at")
                 if gh_updated and (max_updated is None or gh_updated > max_updated):
                     max_updated = gh_updated
