@@ -29,6 +29,16 @@ Each provider stores issues in `data/<platform>/<owner>/<repo>.sqlite` with tabl
 
 ----------
 
+## Setup
+
+```shell
+conda create -n ic python=3.11
+conda activate ic
+pip install -r requirements.txt
+```
+
+----------
+
 ## Usage
 
 ### Scraping CLI Usage
