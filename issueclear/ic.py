@@ -6,6 +6,7 @@ from typing import Optional
 from issueclear.db import RepoDatabase
 from issueclear.scrape.github import GitHubIssueScraper
 from issueclear.scrape.jira import JiraIssueScraper
+from issueclear.api import get_issues_with_comments  # retained for possible future use (not currently used)
 
 
 def cmd_sync(args):
@@ -40,6 +41,8 @@ def cmd_show(args):
 def cmd_stats(args):
     db = RepoDatabase(args.platform, args.owner, args.repo)
     print(json.dumps(db.stats()))
+
+
 
 
 def build_parser():
@@ -84,6 +87,8 @@ def build_parser():
     sp_stats = sub.add_parser("stats", help="Show counts")
     add_common(sp_stats)
     sp_stats.set_defaults(func=cmd_stats)
+
+    # (Query subcommand temporarily removed pending API finalization.)
 
     return p
 
