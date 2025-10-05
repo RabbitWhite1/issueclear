@@ -4,11 +4,13 @@ from datetime import datetime
 from typing import Iterator, Optional
 
 import requests
-from rich.progress import BarColumn  # BarColumn currently unused but kept if needed for future customization
-from issueclear.utils import create_progress, polite_sleep
+from rich.progress import (
+    BarColumn,
+)  # BarColumn currently unused but kept if needed for future customization
 
 from issueclear.db import RepoDatabase
 from issueclear.scrape.common import IssueScraper
+from issueclear.utils import create_progress, polite_sleep
 
 GITHUB_API = "https://api.github.com"  # kept for backward compatibility
 GITHUB_API_VERSION = "2022-11-28"
@@ -37,7 +39,9 @@ class GitHubIssueScraper(IssueScraper):
         self.owner = owner
         self.repo = repo
 
-    def list_issues(self, since_iso: Optional[str] = None, state: str = "all", per_page: int = 100) -> Iterator[dict]:
+    def list_issues(
+        self, since_iso: Optional[str] = None, state: str = "all", per_page: int = 100
+    ) -> Iterator[dict]:
         """Unified listing of issues & PRs (optionally updated since a timestamp).
 
         Args:
@@ -50,13 +54,29 @@ class GitHubIssueScraper(IssueScraper):
         page = 1
         while True:
             # Explicitly sort by updated ascending so incremental sync with a limit is deterministic.
-            params = {"state": state, "per_page": per_page, "page": page, "sort": "updated", "direction": "asc"}
+            params = {
+                "state": state,
+                "per_page": per_page,
+                "page": page,
+                "sort": "updated",
+                "direction": "asc",
+            }
             if since_iso:
                 params["since"] = since_iso
             url = f"{GITHUB_API}/repos/{self.owner}/{self.repo}/issues"
             resp = requests.get(url, headers=self.headers, params=params)
-            if resp.status_code != 200:
-                raise RuntimeError(f"Failed to list issues {params=}: {resp.status_code}, {resp.text}")
+            if resp.status_code == 403:
+                print(
+                    f"[{datetime.now()}] Failed to list issues {params=}: {resp.status_code}, {resp.text}"
+                )
+                print(f"[{datetime.now()}] Wait for 1 hour until rate limit recovers.")
+                time.sleep(3600)
+                print(f"[{datetime.now()}] Resuming.")
+                continue
+            elif resp.status_code != 200:
+                raise RuntimeError(
+                    f"[{datetime.now()}] Failed to list issues {params=}: {resp.status_code}, {resp.text}"
+                )
             batch = resp.json()
             if not batch:
                 break
@@ -67,7 +87,9 @@ class GitHubIssueScraper(IssueScraper):
             page += 1
             polite_sleep(base=0.25)  # courteous pacing for issues listing
 
-    def list_comments(self, issue_number: int, since_iso: Optional[str] = None, per_page: int = 100) -> Iterator[dict]:
+    def list_comments(
+        self, issue_number: int, since_iso: Optional[str] = None, per_page: int = 100
+    ) -> Iterator[dict]:
         page = 1
         while True:
             params = {"per_page": per_page, "page": page}
@@ -75,8 +97,18 @@ class GitHubIssueScraper(IssueScraper):
                 params["since"] = since_iso
             url = f"{GITHUB_API}/repos/{self.owner}/{self.repo}/issues/{issue_number}/comments"
             resp = requests.get(url, headers=self.headers, params=params)
-            if resp.status_code != 200:
-                raise RuntimeError(f"Failed to list comments for issue {issue_number}: {resp.status_code}, {resp.text}")
+            if resp.status_code == 403:
+                print(
+                    f"[{datetime.now()}] Failed to list comments for issue {issue_number}: {resp.status_code}, {resp.text}"
+                )
+                print(f"[{datetime.now()}] Wait for 1 hour until rate limit recovers.")
+                time.sleep(3600)
+                print(f"[{datetime.now()}] Resuming.")
+                continue
+            elif resp.status_code != 200:
+                raise (
+                    f"[{datetime.now()}] Failed to list comments for issue {issue_number}: {resp.status_code}, {resp.text}"
+                )
             data = resp.json()
             if not data:
                 break
@@ -110,7 +142,10 @@ class GitHubIssueScraper(IssueScraper):
                     resp = requests.get(
                         f"{GITHUB_API}/search/issues",
                         headers=self.headers,
-                        params={"q": q, "per_page": 1},  # per_page=1 for minimal payload; total_count unaffected
+                        params={
+                            "q": q,
+                            "per_page": 1,
+                        },  # per_page=1 for minimal payload; total_count unaffected
                         timeout=15,
                     )
                     if resp.status_code != 200:
@@ -160,7 +195,11 @@ class GitHubIssueScraper(IssueScraper):
         If limit is provided progress total is min(estimated_total, limit) when an estimate exists.
         """
         last_issue_sync = db.get_last_issue_sync()
-        issue_iter = self.list_issues(since_iso=last_issue_sync) if last_issue_sync else self.list_issues()
+        issue_iter = (
+            self.list_issues(since_iso=last_issue_sync)
+            if last_issue_sync
+            else self.list_issues()
+        )
 
         total_estimate = self.get_issue_total_count(last_issue_sync)
 

@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "issueclear"
+version = "0.1.0"
+description = "Sync and query GitHub/JIRA issues with LLM relevance filtering and HF dataset export"
+authors = [ { name = "Zhanghan Wang" } ]
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = "==3.11.*"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Intended Audience :: Developers",
+  "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+  "requests>=2.31.0",
+  "rich>=13.7.0",
+  "litellm>=1.43.0",
+  "transformers>=4.41.0",
+  "accelerate>=0.30.0",
+  "bitsandbytes>=0.43.0",
+  "pandas>=2.0.0",
+  "datasets>=2.19.0",
+  "torch",
+  "torchvision",
+  "vllm>=0.11.0",
+]
+
+[project.scripts]
+ic = "issueclear.ic:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["issueclear*"]
+
+[tool.uv]
+package = true
+# Explicitly favor Python 3.11; uv will download/manage if a matching interpreter
+# is not already available. If you need a patch bump, run:
+#   uv python install 3.11.9 && uv sync --python 3.11.9
+# (uv currently uses the requires-python spec plus any --python flag.)
+
+[tool.issueclear]
+# Room for future project-specific configuration.

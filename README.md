@@ -31,6 +31,19 @@ Each provider stores issues in `data/<platform>/<owner>/<repo>.sqlite` with tabl
 
 ## Setup
 
+### Option A: uv (Recommended)
+
+```bash
+uv sync
+# Then you may either call python from uv
+uv run python
+uv run ic --help
+# Or source the venv
+source .venv/bin/activate
+```
+
+### Option B: Conda / pip
+
 ```shell
 conda create -n ic python=3.11
 conda activate ic
@@ -54,7 +67,7 @@ Sync GitHub repository (issues + PRs):
 Before scraping Github issues, you must set environment varialbe `GITHUB_TOKEN`.
 
 ```shell
-python -m issueclear.ic sync --platform github --owner pygraphviz --repo pygraphviz
+ic sync --platform github --owner pygraphviz --repo pygraphviz
 ```
 
 #### JIRA
@@ -62,7 +75,7 @@ python -m issueclear.ic sync --platform github --owner pygraphviz --repo pygraph
 Sync JIRA project (must specify base URL):
 
 ```shell
-python -m issueclear.ic sync --platform jira --owner ZOOKEEPER --repo ZOOKEEPER --jira-base-url https://issues.apache.org/jira
+ic sync --platform jira --owner ZOOKEEPER --repo ZOOKEEPER --jira_base_url https://issues.apache.org/jira
 ```
 
 
@@ -91,10 +104,8 @@ for issue in issues:
 # Run vLLM server
 python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2-7B-Instruct --port 8080 --quantization bitsandbytes --dtype auto
 
-# curl -s http://localhost:8080/v1/models  # Use this to check endpoint
-
-# Run query (in another terminal)
-python query.py --model hosted_vllm/Qwen/Qwen2-7B-Instruct --api-base http://localhost:8080/v1 --query "memory leak in layout"
+# Run query (in another terminal). After install, script is available; or use uv run.
+ic query --model hosted_vllm/Qwen/Qwen2-7B-Instruct --api_base http://localhost:8080/v1 --owner pygraphviz --repo pygraphviz --query "memory leak in layout"
 ```
 
 #### Online API
@@ -103,7 +114,7 @@ python query.py --model hosted_vllm/Qwen/Qwen2-7B-Instruct --api-base http://loc
 export OPENAI_API_KEY=sk-...
 # OR for Anthropic
 export ANTHROPIC_API_KEY=...
-python query.py --model="gpt-4o-mini" --query  "memory leak in layout"
+ic query --model gpt-4o-mini --owner pygraphviz --repo pygraphviz --query "memory leak in layout"
 ```
 
 

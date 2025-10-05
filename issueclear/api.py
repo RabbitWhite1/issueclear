@@ -4,12 +4,13 @@ This module provides convenience functions for consumers that want fully
 materialized issues along with their comments using the dataclasses defined
 in `issueclear.issue`.
 """
+
 from __future__ import annotations
 
 from typing import List
 
 from issueclear.db import RepoDatabase
-from issueclear.issue import Issue, Comment
+from issueclear.issue import Comment, Issue
 
 
 def get_issues_with_comments(db: RepoDatabase) -> List[Issue]:
@@ -62,7 +63,14 @@ def get_issues_with_comments(db: RepoDatabase) -> List[Issue]:
         ccur = conn.execute(
             "SELECT comment_id, issue_key, body, user_login, created_at, updated_at FROM comments ORDER BY created_at ASC"
         )
-        for (comment_id, issue_key, body, user_login, created_at, updated_at) in ccur.fetchall():
+        for (
+            comment_id,
+            issue_key,
+            body,
+            user_login,
+            created_at,
+            updated_at,
+        ) in ccur.fetchall():
             parent_issue = issue_map.get(issue_key)
             if not parent_issue:
                 continue  # orphan (should not happen)
@@ -77,5 +85,6 @@ def get_issues_with_comments(db: RepoDatabase) -> List[Issue]:
     # Preserve ordering by number
     issues = list(issue_map.values())
     return issues
+
 
 __all__ = ["get_issues_with_comments"]

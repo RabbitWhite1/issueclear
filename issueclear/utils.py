@@ -4,8 +4,8 @@ from typing import Optional
 
 from rich.progress import (
     BarColumn,
-    Progress,
     MofNCompleteColumn,
+    Progress,
     TimeElapsedColumn,
     TimeRemainingColumn,
 )

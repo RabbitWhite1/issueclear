@@ -16,7 +16,9 @@ class IssueScraper:
         """Yield raw issue/pr dictionaries (provider-specific shape)."""
         raise NotImplementedError
 
-    def list_comments(self, issue_identifier, since_iso: Optional[str] = None) -> Iterator[dict]:
+    def list_comments(
+        self, issue_identifier, since_iso: Optional[str] = None
+    ) -> Iterator[dict]:
         """Yield raw comment dictionaries for a given issue identifier/key/number."""
         raise NotImplementedError
 

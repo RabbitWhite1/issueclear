@@ -33,14 +33,14 @@ import json
 import math
 import os
 import re
-from tqdm.rich import tqdm
 from dataclasses import asdict
 from typing import Iterable, List, Optional, Sequence, Tuple
 
-from issueclear.issue import Issue
-from issueclear.db import RepoDatabase
-
 import litellm
+from tqdm.rich import tqdm
+
+from issueclear.db import RepoDatabase
+from issueclear.issue import Issue
 
 SYSTEM_PROMPT = """You are a helpful assistant that classifies software issues for relevance.
 Given: (1) a user query describing what kind of issues they want, and (2) an issue
@@ -62,7 +62,11 @@ JSON_REGEX = re.compile(r"\{[\s\S]*\}")
 
 
 def _render_issue(issue: Issue, include_comments: bool, max_comment_chars: int) -> str:
-    parts = [f"Title: {issue.title}", f"State: {issue.state}", f"Body:\n{issue.body[:4000]}"]
+    parts = [
+        f"Title: {issue.title}",
+        f"State: {issue.state}",
+        f"Body:\n{issue.body[:4000]}",
+    ]
     if include_comments and issue.comments:
         acc = []
         total = 0
@@ -123,8 +127,14 @@ def evaluate_issues_with_llm(
         if max_issues and processed >= max_issues:
             break
         processed += 1
-        rendered = _render_issue(issue, include_comments=include_comments, max_comment_chars=max_comment_chars)
-        user_prompt = f"User Query:\n{user_query}\n---\nIssue #: {issue.issue_id}\n" + rendered
+        rendered = _render_issue(
+            issue,
+            include_comments=include_comments,
+            max_comment_chars=max_comment_chars,
+        )
+        user_prompt = (
+            f"User Query:\n{user_query}\n---\nIssue #: {issue.issue_id}\n" + rendered
+        )
         try:
             resp = litellm.completion(
                 model=model,
@@ -149,8 +159,8 @@ def evaluate_issues_with_llm(
                     except Exception:
                         # Maybe direct text
                         raw_text = getattr(resp, "text", "") or resp.get("text", "")  # type: ignore
-        except Exception as e:  # pragma: no cover
-            print("Failed")
+        except Exception as e:
+            print("Failed calling LLM.")
             raw_text = f'{{"match": false, "score": 0.0, "reason": "error: {e}"}}'
 
         parsed = _safe_parse_json(raw_text) or {}
