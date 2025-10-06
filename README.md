@@ -68,6 +68,10 @@ Before scraping Github issues, you must set environment varialbe `GITHUB_TOKEN`.
 
 ```shell
 ic sync --platform github --owner pygraphviz --repo pygraphviz
+ic sync --platform github --owner cockroachdb --repo cockroach
+ic sync --platform github --owner etcd-io --repo etcd
+ic sync --platform github --owner etcd-io --repo raft
+ic sync --platform github --owner RedisLabs --repo redisraft
 ```
 
 #### JIRA

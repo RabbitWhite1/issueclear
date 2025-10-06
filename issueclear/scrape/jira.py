@@ -154,8 +154,8 @@ class JiraIssueScraper(IssueScraper):
                     for comment_json in self.list_comments(issue_json["key"]):
                         gh_comment = self._map_comment(issue_json["key"], comment_json)
                         db.upsert_comment(issue_id, gh_comment)
-            if max_updated:
-                db.update_last_issue_sync(max_updated)
+                if max_updated:
+                    db.update_last_issue_sync(max_updated)
             return {"processed_issues": processed, "last_updated": max_updated}
 
     def _map_issue(self, jira_issue: dict) -> dict:

@@ -138,9 +138,14 @@ class GitHubIssueScraper(IssueScraper):
                 time.sleep(3600)
                 print(f"[{datetime.now()}] Resuming.")
                 continue
+            elif resp.status_code == 404:
+                print(f"[{datetime.now()}] Issue {issue_number} not found (404). Maybe jitter. Retry within 10s.")
+                time.sleep(10)
+                continue
             elif resp.status_code != 200:
                 raise RuntimeError(
-                    f"[{datetime.now()}] Failed to list comments for issue {issue_number}: {resp.status_code}, {resp.text}"
+                    f"[{datetime.now()}] Failed to list comments for issue {issue_number}: {resp.status_code}, {resp.text}\n"
+                    f"The request is {url} with params {params}"
                 )
             data = resp.json()
             if not data:
@@ -255,8 +260,7 @@ class GitHubIssueScraper(IssueScraper):
             for issue_json in issue_iter:
                 issue_id, inserted, changed = db.upsert_issue(issue_json)
                 processed += 1
-                if progress is not None:
-                    progress.update(task_id, advance=1)
+                progress.update(task_id, advance=1)
                 if limit and processed >= limit:
                     break
                 gh_updated = issue_json.get("updated_at")
@@ -267,6 +271,6 @@ class GitHubIssueScraper(IssueScraper):
                 if comments_count and (inserted or changed):
                     for comment_json in self.list_comments(issue_json["number"]):
                         db.upsert_comment(issue_id, comment_json)
-            if max_updated:
-                db.update_last_issue_sync(max_updated)
+                if max_updated:
+                    db.update_last_issue_sync(max_updated)
             return {"processed_issues": processed, "last_updated": max_updated}
