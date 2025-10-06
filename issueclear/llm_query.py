@@ -89,12 +89,12 @@ def _render_issue(issue: Issue, include_comments: bool, max_comment_chars: int) 
 def _safe_parse_json(text: str) -> Optional[dict]:
     try:
         return json.loads(text)
-    except Exception:
+    except (json.JSONDecodeError, TypeError):
         m = JSON_REGEX.search(text)
         if m:
             try:
                 return json.loads(m.group(0))
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
                 return None
     return None
 
@@ -153,14 +153,14 @@ def evaluate_issues_with_llm(
             if resp is not None:
                 try:
                     raw_text = resp.choices[0].message["content"]  # type: ignore[attr-defined]
-                except Exception:
+                except (AttributeError, KeyError, IndexError):
                     try:
                         raw_text = resp["choices"][0]["message"]["content"]  # type: ignore[index]
-                    except Exception:
+                    except (KeyError, IndexError, TypeError):
                         # Maybe direct text
                         raw_text = getattr(resp, "text", "") or resp.get("text", "")  # type: ignore
         except Exception as e:
-            print("Failed calling LLM.")
+            print(f"Failed calling LLM: {e}")
             raw_text = f'{{"match": false, "score": 0.0, "reason": "error: {e}"}}'
 
         parsed = _safe_parse_json(raw_text) or {}
@@ -168,7 +168,7 @@ def evaluate_issues_with_llm(
         score = parsed.get("score")
         try:
             score = float(score)
-        except Exception:
+        except (ValueError, TypeError):
             score = 0.0
         reason = str(parsed.get("reason") or "")[:500]
 

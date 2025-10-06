@@ -195,8 +195,8 @@ def cmd_jira_inspect(args):
                                            maxResults=0)  # Just get total count
                 issue_count = search_result.get('total', 0)
                 print(f"  {key:<12} | {issue_count:>6} issues | {name} ({project_type})")
-            except:
-                print(f"  {key:<12} | {'?':>6} issues | {name} ({project_type})")
+            except Exception as e:
+                print(f"  {key:<12} | {'?':>6} issues | {name} ({project_type}) [Error: {e}]")
         
         print()
         print("💡 Usage Tips:")

@@ -225,8 +225,9 @@ class JiraIssueScraper(IssueScraper):
             cleaned = since_iso.replace("Z", "")
             dt = datetime.fromisoformat(cleaned)
             return dt.strftime("%Y-%m-%d %H:%M")
-        except Exception:
-            pass
+        except (ValueError, TypeError) as e:
+            # If datetime parsing fails, try fallback strategies
+            print(f"Warning: Failed to parse JIRA datetime '{since_iso}': {e}")
         # Fallbacks
         date_part = None
         if "T" in since_iso:

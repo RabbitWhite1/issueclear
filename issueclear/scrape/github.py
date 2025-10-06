@@ -101,7 +101,9 @@ class GitHubIssueScraper(IssueScraper):
                     dt = datetime.fromisoformat(last_updated_in_batch.replace("Z", "+00:00"))
                     advanced_iso = (dt.timestamp() + 1.0)  # +1 second
                     cursor = datetime.fromtimestamp(advanced_iso, tz=dt.tzinfo or timezone.utc).isoformat().replace("+00:00", "Z")
-                except Exception:
+                except (ValueError, OSError) as e:
+                    # If datetime parsing fails, use the original timestamp
+                    print(f"Warning: Failed to advance cursor from {last_updated_in_batch}: {e}")
                     cursor = last_updated_in_batch
                 advanced = True
             if not advanced:
@@ -180,12 +182,14 @@ class GitHubIssueScraper(IssueScraper):
                         timeout=15,
                     )
                     if resp.status_code != 200:
+                        print(f"GitHub search API error {resp.status_code}: {resp.text[:200]}")
                         return None
                     data = resp.json()
                     # If incomplete_results is True we still have a total_count that's a best effort; accept it.
                     totals += data.get("total_count", 0)
                 return totals
-            except Exception:
+            except (requests.RequestException, ValueError) as e:
+                print(f"GitHub search API request failed: {e}")
                 return None
         # No since filter: use GraphQL (fewer rate limit costs than search)
         graphql_url = "https://api.github.com/graphql"
@@ -204,15 +208,18 @@ class GitHubIssueScraper(IssueScraper):
                 timeout=15,
             )
             if resp.status_code != 200:
+                print(f"GitHub GraphQL API error {resp.status_code}: {resp.text[:200]}")
                 return None
             data = resp.json()
             if "errors" in data:
+                print(f"GitHub GraphQL errors: {data['errors']}")
                 return None
             repo_info = data.get("data", {}).get("repository", {})
             issues_total = repo_info.get("issues", {}).get("totalCount", 0)
             prs_total = repo_info.get("pullRequests", {}).get("totalCount", 0)
             return issues_total + prs_total
-        except Exception:
+        except (requests.RequestException, ValueError) as e:
+            print(f"GitHub GraphQL request failed: {e}")
             return None
 
     def incremental_sync(self, db: RepoDatabase, limit: Optional[int] = None):
