@@ -14,8 +14,8 @@ from issueclear.utils import create_progress, polite_sleep
 
 # Basic JIRA REST API assumptions:
 # - Base URL provided via JIRA_BASE_URL env (e.g. https://jira.mongodb.org)
-# - We treat 'owner' as JIRA project key, and 'repo' as an extra namespace segment (not used by JIRA itself)
-#   so DB path stays consistent platform/owner/repo.sqlite. For a simple project usage, pass --owner PROJECTKEY and --repo PROJECTKEY again.
+# - We treat 'owner' as organization/company marker (e.g. mongodb, apache), and 'project' as JIRA project key (e.g. SERVER, PYTHON)
+#   so DB path becomes platform/owner/project.sqlite (e.g. jira/mongodb/SERVER.sqlite)
 # - Authentication: optional basic auth via JIRA_USER / JIRA_TOKEN (API token or password). If absent, we do anonymous requests.
 # - Incremental sync uses 'updated' field with JQL updated >= "timestamp". JIRA timestamps are in ISO8601 with timezone, we'll store as given.
 
@@ -41,10 +41,10 @@ def parse_jira_datetime(value: str) -> str:
 class JiraIssueScraper(IssueScraper):
     provider_name = "jira"
 
-    def __init__(self, project_key: str, repo: str, base_url: Optional[str] = None):
+    def __init__(self, owner: str, project: str, base_url: Optional[str] = None):
         super().__init__()
-        self.project_key = project_key
-        self.repo = repo
+        self.project = project  # project contains the JIRA project key
+        self.owner = owner  # owner is organization/company marker
         self.base_url = base_url.rstrip("/")
         self.headers = {
             "Accept": "application/json",
@@ -63,10 +63,10 @@ class JiraIssueScraper(IssueScraper):
 
     def list_issues(self, since_iso: Optional[str] = None) -> Iterator[dict]:
         # Use JQL with project and updated filter.
-        jql = f"project={self.project_key} ORDER BY updated ASC"
+        jql = f"project={self.project} ORDER BY updated ASC"
         if since_iso:
             reformatted = self._format_updated_since(since_iso)
-            jql = f"project={self.project_key} AND updated >= '{reformatted}' ORDER BY updated ASC"
+            jql = f"project={self.project} AND updated >= '{reformatted}' ORDER BY updated ASC"
         start_at = 0
         while True:
             params = {
@@ -109,18 +109,16 @@ class JiraIssueScraper(IssueScraper):
 
     def get_issue_total_count(self, since_iso: Optional[str] = None) -> Optional[int]:
         # Use search with maxResults=0 to obtain a total count quickly.
-        try:
-            jql = f"project={self.project_key}"
-            if since_iso:
-                jql += f" AND updated >= '{since_iso}'"
-            resp = self._request(
-                "GET",
-                "/rest/api/2/search",
-                params={"jql": jql, "maxResults": 0, "fields": "id"},
-            )
-            return resp.json().get("total")
-        except Exception:
-            return None
+        jql = f"project={self.project}"
+        if since_iso:
+            reformatted = self._format_updated_since(since_iso)
+            jql += f" AND updated >= '{reformatted}'"
+        resp = self._request(
+            "GET",
+            "/rest/api/2/search",
+            params={"jql": jql, "maxResults": 0, "fields": "id"},
+        )
+        return resp.json().get("total")
 
     def incremental_sync(self, db: RepoDatabase, limit: Optional[int] = None):
         last_issue_sync = db.get_last_issue_sync()

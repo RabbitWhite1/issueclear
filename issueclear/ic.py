@@ -8,7 +8,7 @@ import pandas as pd
 import rich
 from datasets import Dataset, DatasetDict, Features, Value
 
-from issueclear.customized_hf import patch_datasets_tqdm
+from issueclear.utils import patch_datasets_tqdm
 from issueclear.db import RepoDatabase
 from issueclear.llm_query import IssueRelevanceQuerier
 from issueclear.scrape.github import GitHubIssueScraper
@@ -91,6 +91,7 @@ def cmd_sync(args):
     elif args.platform == "jira":
         if not args.jira_base_url:
             raise SystemExit("--jira-base-url is required when platform is jira")
+        # For JIRA: args.owner=organization marker, args.repo=project
         scraper = JiraIssueScraper(args.owner, args.repo, base_url=args.jira_base_url)
     else:
         raise SystemExit(f"Unsupported platform: {args.platform}")
@@ -138,6 +139,80 @@ def cmd_query(args):
     matches = querier.run_on_db(db, query=args.query)
     for m in matches[:10]:
         print(f"#{m['issue_id']} score={m['score']} :: {m['reason']}")
+
+
+def cmd_jira_inspect(args):
+    """Inspect JIRA server: show server info, projects, and help identify correct owner/repo values."""
+    import requests
+    
+    base_url = args.jira_base_url.rstrip("/")
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "issueclear-jira-inspector",
+    }
+    
+    def jira_request(path: str, **params):
+        url = f"{base_url}{path}"
+        resp = requests.get(url, headers=headers, timeout=30, params=params)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"JIRA API error {resp.status_code} {url}: {resp.text[:500]}")
+        return resp.json()
+    
+    print(f"🔍 Inspecting JIRA server: {base_url}")
+    print()
+    
+    # Get server info
+    try:
+        server_info = jira_request("/rest/api/2/serverInfo")
+        print("📊 Server Information:")
+        print(f"  Version: {server_info.get('version', 'Unknown')}")
+        print(f"  Build: {server_info.get('buildNumber', 'Unknown')}")
+        print(f"  Title: {server_info.get('serverTitle', 'Unknown')}")
+        print(f"  URL: {server_info.get('baseUrl', 'Unknown')}")
+        print()
+    except Exception as e:
+        print(f"⚠️  Could not fetch server info: {e}")
+        print()
+    
+    # Get available projects
+    try:
+        projects = jira_request("/rest/api/2/project")
+        print(f"📁 Available Projects ({len(projects)} total):")
+        print()
+        
+        # Sort projects by key for easier browsing
+        projects_sorted = sorted(projects, key=lambda p: p.get('key', ''))
+        
+        for project in projects_sorted:
+            key = project.get('key', 'N/A')
+            name = project.get('name', 'N/A')
+            project_type = project.get('projectTypeKey', 'unknown')
+            
+            # Try to get issue count for this project
+            try:
+                search_result = jira_request("/rest/api/2/search", 
+                                           jql=f"project={key}", 
+                                           maxResults=0)  # Just get total count
+                issue_count = search_result.get('total', 0)
+                print(f"  {key:<12} | {issue_count:>6} issues | {name} ({project_type})")
+            except:
+                print(f"  {key:<12} | {'?':>6} issues | {name} ({project_type})")
+        
+        print()
+        print("💡 Usage Tips:")
+        print("  • Use organization/company name as --owner (e.g., mongodb, apache, etc.)")
+        print("  • Use project KEY as --repo (e.g., SERVER, PYTHON, etc.)")
+        print("  • This creates organized storage: data/jira/organization/project.sqlite")
+        print()
+        print("Example commands:")
+        if projects_sorted:
+            example_key = projects_sorted[0].get('key', 'PROJECT')
+            print(f"  uv run ic sync --platform jira --owner mongodb --repo {example_key} --jira_base_url {base_url}")
+            print(f"  uv run ic show --platform jira --owner mongodb --repo {example_key}")
+        
+    except Exception as e:
+        print(f"⚠️  Could not fetch projects: {e}")
+        print("   This might indicate authentication issues or API restrictions.")
 
 
 def build_parser():
@@ -221,6 +296,18 @@ def build_parser():
         help="Explicit API key (use NA for local if required)",
     )
     sp_query.set_defaults(func=cmd_query)
+    
+    # Subcommand: jira_inspect
+    sp_inspect = sub.add_parser("jira_inspect", help="Inspect JIRA server: show projects and help identify correct owner/repo")
+    sp_inspect.add_argument(
+        "--jira_base_url",
+        "--jira-base-url", 
+        dest="jira_base_url",
+        required=True,
+        help="Base URL for JIRA (e.g. https://jira.mongodb.org)"
+    )
+    sp_inspect.set_defaults(func=cmd_jira_inspect)
+    
     return p
 
 

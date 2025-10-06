@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Iterator, Optional
 
 import requests
+from datetime import timezone
 from rich.progress import (
     BarColumn,
 )  # BarColumn currently unused but kept if needed for future customization
@@ -51,41 +52,71 @@ class GitHubIssueScraper(IssueScraper):
         Yields:
             Raw JSON dict for each issue / PR.
         """
-        page = 1
+        # Cursor-based iteration: repeatedly request the earliest page (implicitly page=1) filtered by an ever-advancing
+        # updated timestamp (since). This avoids GitHub's deep pagination 422 for large repositories.
+        # We sort ascending by updated so we can safely advance the since cursor to the last item we emitted.
+        # Safeguards: if a loop yields no progress (cursor doesn't advance), we break to avoid infinite loops.
+        emitted = 0
+        safety_no_progress = 0
+        cursor = since_iso  # moving time cursor (inclusive semantics on GitHub side)
+        # We'll advance cursor by a tiny epsilon (1 second) past the last updated timestamp to reduce duplicate fetches.
         while True:
-            # Explicitly sort by updated ascending so incremental sync with a limit is deterministic.
             params = {
                 "state": state,
                 "per_page": per_page,
-                "page": page,
                 "sort": "updated",
                 "direction": "asc",
             }
-            if since_iso:
-                params["since"] = since_iso
+            if cursor:
+                params["since"] = cursor
             url = f"{GITHUB_API}/repos/{self.owner}/{self.repo}/issues"
             resp = requests.get(url, headers=self.headers, params=params)
             if resp.status_code == 403:
-                print(
-                    f"[{datetime.now()}] Failed to list issues {params=}: {resp.status_code}, {resp.text}"
-                )
-                print(f"[{datetime.now()}] Wait for 1 hour until rate limit recovers.")
+                print(f"[{datetime.now()}] Rate limit hit listing issues {params=}: sleeping 1h")
                 time.sleep(3600)
-                print(f"[{datetime.now()}] Resuming.")
                 continue
-            elif resp.status_code != 200:
+            if resp.status_code == 422:
+                # Should not happen now (no page param). If it does, abort to avoid misleading loop.
+                raise RuntimeError(
+                    f"[{datetime.now()}] Unexpected 422 without page param {params=}: {resp.status_code}, {resp.text}"
+                )
+            if resp.status_code != 200:
                 raise RuntimeError(
                     f"[{datetime.now()}] Failed to list issues {params=}: {resp.status_code}, {resp.text}"
                 )
             batch = resp.json()
             if not batch:
                 break
+            advanced = False
+            last_updated_in_batch: Optional[str] = None
             for issue in batch:
+                updated_at = issue.get("updated_at")
+                if updated_at:
+                    last_updated_in_batch = updated_at
                 yield issue
+                emitted += 1
+            if last_updated_in_batch and last_updated_in_batch != cursor:
+                # Add a small epsilon to move beyond the last updated to avoid re-fetching the same tail issue.
+                try:
+                    dt = datetime.fromisoformat(last_updated_in_batch.replace("Z", "+00:00"))
+                    advanced_iso = (dt.timestamp() + 1.0)  # +1 second
+                    cursor = datetime.fromtimestamp(advanced_iso, tz=dt.tzinfo or timezone.utc).isoformat().replace("+00:00", "Z")
+                except Exception:
+                    cursor = last_updated_in_batch
+                advanced = True
+            if not advanced:
+                safety_no_progress += 1
+            else:
+                safety_no_progress = 0
+            # Break conditions:
             if len(batch) < per_page:
+                break  # Exhausted dataset for current cursor
+            if safety_no_progress >= 2:
+                print(
+                    f"[{datetime.now()}] Stopping early: no cursor progress after {safety_no_progress} attempts (cursor={cursor})."
+                )
                 break
-            page += 1
-            polite_sleep(base=0.25)  # courteous pacing for issues listing
+            polite_sleep(base=0.25)
 
     def list_comments(
         self, issue_number: int, since_iso: Optional[str] = None, per_page: int = 100
@@ -106,7 +137,7 @@ class GitHubIssueScraper(IssueScraper):
                 print(f"[{datetime.now()}] Resuming.")
                 continue
             elif resp.status_code != 200:
-                raise (
+                raise RuntimeError(
                     f"[{datetime.now()}] Failed to list comments for issue {issue_number}: {resp.status_code}, {resp.text}"
                 )
             data = resp.json()

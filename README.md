@@ -72,17 +72,29 @@ ic sync --platform github --owner pygraphviz --repo pygraphviz
 
 #### JIRA
 
-Sync JIRA project (must specify base URL):
+First, inspect available projects on the JIRA server:
 
 ```shell
-ic sync --platform jira --owner ZOOKEEPER --repo ZOOKEEPER --jira_base_url https://issues.apache.org/jira
+ic jira_inspect --jira_base_url https://jira.mongodb.org
+ic jira_inspect --jira_base_url https://issues.apache.org/jira
 ```
 
+Then sync JIRA project:
+
+```shell
+# MongoDB JIRA examples
+ic sync --platform jira --owner mongodb --repo SERVER --jira_base_url https://jira.mongodb.org
+
+# Apache JIRA examples  
+ic sync --platform jira --owner apache --repo ZOOKEEPER --jira_base_url https://issues.apache.org/jira
+```
 
 Notes:
-* For JIRA, `--owner` is treated as the project key. `--repo` is still required (choose the same value if you don't need extra namespacing).
-* JIRA issue keys like `SERVER-1234` are mapped to a numeric `number` by extracting the trailing digits; the full key is retained inside `metadata` under `key`.
-* Closed timestamp for JIRA is not currently derived; `closed_at` remains null.
+* For JIRA: `--owner` is an organization/company marker (e.g., `mongodb`, `apache`), `--repo` is the JIRA project key (e.g., `SERVER`, `PYTHON`, `ZOOKEEPER`)
+* This creates organized storage: `data/jira/mongodb/SERVER.sqlite`, `data/jira/apache/ZOOKEEPER.sqlite`
+* Use `ic jira_inspect` to discover available projects and their issue counts
+* JIRA issue keys like `SERVER-1234` are mapped to a numeric `number` by extracting the trailing digits; the full key is retained inside `metadata` under `key`
+* Closed timestamp for JIRA is not currently derived; `closed_at` remains null
 
 
 ### Inspecting Database
