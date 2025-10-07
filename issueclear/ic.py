@@ -67,7 +67,7 @@ def cmd_tohf(args):
 
     datasets_map: dict[str, dict[str, "Dataset"]] = {}
     for db_path in db_paths:
-        split_name = db_path.removeprefix(ROOT_DATA_PATH).removesuffix(".sqlite").strip("/").replace("/", "__")
+        split_name = db_path.removeprefix(ROOT_DATA_PATH).removesuffix(".sqlite").strip("/").replace("/", "__").replace("-", "_")
         rich.print(f"Loading subset: [bold]{split_name}[/bold]")
         conn = sqlite3.connect(db_path)
         tables = pd.read_sql_query(
