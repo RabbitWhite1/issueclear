@@ -4,9 +4,7 @@ from datetime import datetime
 from typing import Iterator, Optional
 
 import requests
-from rich.progress import (
-    MofNCompleteColumn,
-)  # retained for potential future per-task customization
+from rich.progress import MofNCompleteColumn  # retained for potential future per-task customization
 
 from issueclear.db import RepoDatabase
 from issueclear.scrape.common import IssueScraper
@@ -41,7 +39,12 @@ def parse_jira_datetime(value: str) -> str:
 class JiraIssueScraper(IssueScraper):
     provider_name = "jira"
 
-    def __init__(self, owner: str, project: str, base_url: Optional[str] = None):
+    def __init__(
+        self,
+        owner: str,
+        project: str,
+        base_url: Optional[str] = None,
+    ):
         super().__init__()
         self.project = project  # project contains the JIRA project key
         self.owner = owner  # owner is organization/company marker
@@ -56,17 +59,15 @@ class JiraIssueScraper(IssueScraper):
         url = f"{self.base_url}{path}"
         resp = requests.request(method, url, headers=self.headers, timeout=30, **kwargs)
         if resp.status_code >= 400:
-            raise RuntimeError(
-                f"JIRA API error {resp.status_code} {url}: {resp.text[:500]}"
-            )
+            raise RuntimeError(f"JIRA API error {resp.status_code} {url}: {resp.text[:500]}")
         return resp
 
-    def list_issues(self, since_iso: Optional[str] = None) -> Iterator[dict]:
-        # Use JQL with project and updated filter.
-        jql = f"project={self.project} ORDER BY updated ASC"
+    def list_issues(self, since_iso: Optional[str] = None, sortby: str = "updated") -> Iterator[dict]:
+        # Build JQL using chosen sort field (updated|created). JIRA supports both in ORDER BY.
+        jql = f"project={self.project} ORDER BY {sortby} ASC"
         if since_iso:
             reformatted = self._format_updated_since(since_iso)
-            jql = f"project={self.project} AND updated >= '{reformatted}' ORDER BY updated ASC"
+            jql = f"project={self.project} AND {sortby} >= '{reformatted}' ORDER BY {sortby} ASC"
         start_at = 0
         while True:
             params = {
@@ -120,12 +121,15 @@ class JiraIssueScraper(IssueScraper):
         )
         return resp.json().get("total")
 
-    def incremental_sync(self, db: RepoDatabase, limit: Optional[int] = None):
-        last_issue_sync = db.get_last_issue_sync()
+    def incremental_sync(
+        self, db: RepoDatabase, limit: Optional[int] = None, force_all: bool = False, sortby: str = "updated"
+    ) -> dict:
+        if force_all:
+            last_issue_sync = None
+        else:
+            last_issue_sync = db.get_last_issue_sync()
         issue_iter = (
-            self.list_issues(since_iso=last_issue_sync)
-            if last_issue_sync
-            else self.list_issues()
+            self.list_issues(since_iso=last_issue_sync, sortby=sortby) if last_issue_sync else self.list_issues(sortby=sortby)
         )
         total_estimate = self.get_issue_total_count(last_issue_sync)
         with create_progress() as progress:
@@ -168,9 +172,7 @@ class JiraIssueScraper(IssueScraper):
         description = fields.get("description") or ""
         reporter = (fields.get("reporter") or {}).get("displayName")
         comment_meta = fields.get("comment", {})
-        comments_total = (
-            comment_meta.get("total") if isinstance(comment_meta, dict) else None
-        )
+        comments_total = comment_meta.get("total") if isinstance(comment_meta, dict) else None
         # Convert to GitHub-like schema
         # We need a numeric 'number' for the DB uniqueness; extract trailing digits if present; else hash fallback.
         number_part = 0
@@ -201,9 +203,7 @@ class JiraIssueScraper(IssueScraper):
         created = jira_comment.get("created")
         updated = jira_comment.get("updated")
         return {
-            "id": (
-                int(cid) if cid and str(cid).isdigit() else hash(f"{issue_key}:{cid}")
-            ),
+            "id": (int(cid) if cid and str(cid).isdigit() else hash(f"{issue_key}:{cid}")),
             "body": body,
             "user": author or "",
             "created_at": parse_jira_datetime(created) if created else None,

@@ -1,18 +1,20 @@
 import argparse
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
 import pandas as pd
 import rich
 from datasets import Dataset, DatasetDict, Features, Value
+from huggingface_hub import HfApi
 
-from issueclear.utils import patch_datasets_tqdm
 from issueclear.db import RepoDatabase
 from issueclear.llm_query import IssueRelevanceQuerier
 from issueclear.scrape.github import GitHubIssueScraper
 from issueclear.scrape.jira import JiraIssueScraper
+from issueclear.utils import hf_repo_exists, patch_datasets_tqdm
 
 patch_datasets_tqdm()
 
@@ -46,9 +48,19 @@ def cmd_tohf(args):
     Each table becomes a dataset config; each database file path becomes a split name.
     Example resulting dataset_repo (config 'issues') splits: github__pygraphviz__pygraphviz, jira__XYZ__XYZ, etc.
     """
+    api = HfApi()
+    if hf_repo_exists(api, args.hf_repo, repo_type="dataset"):
+        rich.print(f"[green]Dataset repo {args.hf_repo} already exists.[/green]")
+        reset_hf = input("Do you want to reset the Hugging Face repo (delete existing data)? [y/n] (default n) ")
+        if reset_hf.strip().lower() == "y":
+            api.delete_repo(repo_id=args.hf_repo, repo_type="dataset")
+            print(f"[{datetime.now()}] Deleted {args.hf_repo}")
+            api.create_repo(repo_id=args.hf_repo, repo_type="dataset", private=args.private)
+            print(f"[{datetime.now()}] Recreated {args.hf_repo}")
+
     db_paths = _find_sqlite_files(ROOT_DATA_PATH)
     if len(db_paths) == 0:
-        rich.print("[yellow]No .sqlite files found under 'data/'. Run sync first.[/yellow]")
+        rich.print("[yellow]No `.sqlite` files found under 'data/'. Run sync first.[/yellow]")
         return
 
     rich.print(f"Found {len(db_paths)} dbs", db_paths)
@@ -95,14 +107,14 @@ def cmd_sync(args):
         scraper = JiraIssueScraper(args.owner, args.repo, base_url=args.jira_base_url)
     else:
         raise SystemExit(f"Unsupported platform: {args.platform}")
-    result = scraper.incremental_sync(db, limit=args.limit)
+    result = scraper.incremental_sync(db, limit=args.limit, force_all=args.force_all, sortby=args.sortby)
 
     print(json.dumps(result, default=str))
 
 
 def cmd_show(args):
     db = RepoDatabase(args.platform, args.owner, args.repo)
-    issue_id = args.issue_id  # unified internal name
+    issue_id = args.issue_id
     if issue_id is None:
         rows = db.list_issues()
         print(json.dumps(rows, indent=2))
@@ -144,23 +156,23 @@ def cmd_query(args):
 def cmd_jira_inspect(args):
     """Inspect JIRA server: show server info, projects, and help identify correct owner/repo values."""
     import requests
-    
+
     base_url = args.jira_base_url.rstrip("/")
     headers = {
         "Accept": "application/json",
         "User-Agent": "issueclear-jira-inspector",
     }
-    
+
     def jira_request(path: str, **params):
         url = f"{base_url}{path}"
         resp = requests.get(url, headers=headers, timeout=30, params=params)
         if resp.status_code >= 400:
             raise RuntimeError(f"JIRA API error {resp.status_code} {url}: {resp.text[:500]}")
         return resp.json()
-    
+
     print(f"🔍 Inspecting JIRA server: {base_url}")
     print()
-    
+
     # Get server info
     try:
         server_info = jira_request("/rest/api/2/serverInfo")
@@ -173,31 +185,29 @@ def cmd_jira_inspect(args):
     except Exception as e:
         print(f"⚠️  Could not fetch server info: {e}")
         print()
-    
+
     # Get available projects
     try:
         projects = jira_request("/rest/api/2/project")
         print(f"📁 Available Projects ({len(projects)} total):")
         print()
-        
+
         # Sort projects by key for easier browsing
-        projects_sorted = sorted(projects, key=lambda p: p.get('key', ''))
-        
+        projects_sorted = sorted(projects, key=lambda p: p.get("key", ""))
+
         for project in projects_sorted:
-            key = project.get('key', 'N/A')
-            name = project.get('name', 'N/A')
-            project_type = project.get('projectTypeKey', 'unknown')
-            
+            key = project.get("key", "N/A")
+            name = project.get("name", "N/A")
+            project_type = project.get("projectTypeKey", "unknown")
+
             # Try to get issue count for this project
             try:
-                search_result = jira_request("/rest/api/2/search", 
-                                           jql=f"project={key}", 
-                                           maxResults=0)  # Just get total count
-                issue_count = search_result.get('total', 0)
+                search_result = jira_request("/rest/api/2/search", jql=f"project={key}", maxResults=0)  # Just get total count
+                issue_count = search_result.get("total", 0)
                 print(f"  {key:<12} | {issue_count:>6} issues | {name} ({project_type})")
             except Exception as e:
                 print(f"  {key:<12} | {'?':>6} issues | {name} ({project_type}) [Error: {e}]")
-        
+
         print()
         print("💡 Usage Tips:")
         print("  • Use organization/company name as --owner (e.g., mongodb, apache, etc.)")
@@ -206,10 +216,10 @@ def cmd_jira_inspect(args):
         print()
         print("Example commands:")
         if projects_sorted:
-            example_key = projects_sorted[0].get('key', 'PROJECT')
+            example_key = projects_sorted[0].get("key", "PROJECT")
             print(f"  uv run ic sync --platform jira --owner mongodb --repo {example_key} --jira_base_url {base_url}")
             print(f"  uv run ic show --platform jira --owner mongodb --repo {example_key}")
-        
+
     except Exception as e:
         print(f"⚠️  Could not fetch projects: {e}")
         print("   This might indicate authentication issues or API restrictions.")
@@ -227,8 +237,6 @@ def build_parser():
         # Use underscore naming for consistency; keep legacy hyphenated alias for backward compatibility.
         sp.add_argument(
             "--jira_base_url",
-            "--jira-base-url",
-            dest="jira_base_url",
             required=False,
             help="Base URL for JIRA (required when --platform jira; e.g. https://jira.example.com)",
         )
@@ -241,6 +249,17 @@ def build_parser():
         type=int,
         default=None,
         help="Maximum number of issues/PRs to process this run (useful for huge repos)",
+    )
+    sp_sync.add_argument(
+        "--sortby",
+        choices=["created", "updated"],
+        default="created",
+        help="Field for incremental ordering/cursor (created|updated)",
+    )
+    sp_sync.add_argument(
+        "--force_all",
+        action="store_true",
+        help="Force re-sync of all issues, ignoring last sync time",
     )
     sp_sync.set_defaults(func=cmd_sync)
 
@@ -264,16 +283,14 @@ def build_parser():
     sp_tohf = sub.add_parser("tohf", help="Push local SQLite data -> Hugging Face dataset repo")
     sp_tohf.add_argument(
         "--hf_repo",
-        "--hf-repo",
         required=True,
         help="Target Hub repo like username/issues",
     )
     sp_tohf.add_argument("--private", action="store_true", help="Mark dataset private")
     sp_tohf.add_argument(
         "--dry_run",
-        "--dry-run",
         action="store_true",
-        help="Load/prepare but do not push",
+        help="Try to load/prepare but do not push",
     )
     sp_tohf.set_defaults(func=cmd_tohf)
 
@@ -285,35 +302,34 @@ def build_parser():
     sp_query.add_argument("--max_issues", "--max-issues", type=int, default=None)
     sp_query.add_argument(
         "--api_base",
-        "--api-base",
         default=None,
         help="Override API base (e.g. http://localhost:8080/v1)",
     )
     sp_query.add_argument(
         "--api_key",
-        "--api-key",
         default=None,
         help="Explicit API key (use NA for local if required)",
     )
     sp_query.set_defaults(func=cmd_query)
-    
+
     # Subcommand: jira_inspect
-    sp_inspect = sub.add_parser("jira_inspect", help="Inspect JIRA server: show projects and help identify correct owner/repo")
+    sp_inspect = sub.add_parser(
+        "jira_inspect",
+        help="Inspect JIRA server: show projects and help identify correct owner/repo",
+    )
     sp_inspect.add_argument(
         "--jira_base_url",
-        "--jira-base-url", 
-        dest="jira_base_url",
         required=True,
-        help="Base URL for JIRA (e.g. https://jira.mongodb.org)"
+        help="Base URL for JIRA (e.g. https://jira.mongodb.org)",
     )
     sp_inspect.set_defaults(func=cmd_jira_inspect)
-    
+
     return p
 
 
-def main(argv: Optional[list] = None):
+def main():
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args()
     args.func(args)
 
 

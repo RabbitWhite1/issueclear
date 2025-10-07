@@ -1,10 +1,8 @@
-import random
-import time
-from typing import Optional
-
 import asyncio
 import json
 import os
+import random
+import time
 from typing import Any, Optional
 
 import datasets
@@ -17,6 +15,8 @@ import datasets.io.sql
 import datasets.search
 import psutil
 from dotenv import load_dotenv
+from huggingface_hub import HfApi
+from huggingface_hub.errors import RepositoryNotFoundError
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -32,15 +32,8 @@ from rich.progress import (
 )
 from rich.text import Text
 from tqdm.rich import tqdm as rich_tqdm
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
 
-__all__ = ["create_progress", "polite_sleep"]
+__all__ = ["create_progress", "polite_sleep", "repo_exists"]
 
 
 def create_progress(description: str = "Sync") -> Progress:
@@ -188,3 +181,11 @@ def make_progress(description: str) -> Progress:
         RateColumn(),
         "]",
     )
+
+
+def hf_repo_exists(api, repo_id, repo_type):
+    try:
+        api.repo_info(repo_id=repo_id, repo_type=repo_type)
+        return True
+    except RepositoryNotFoundError:
+        return False

@@ -132,9 +132,7 @@ def evaluate_issues_with_llm(
             include_comments=include_comments,
             max_comment_chars=max_comment_chars,
         )
-        user_prompt = (
-            f"User Query:\n{user_query}\n---\nIssue #: {issue.issue_id}\n" + rendered
-        )
+        user_prompt = f"User Query:\n{user_query}\n---\nIssue #: {issue.issue_id}\n" + rendered
         try:
             resp = litellm.completion(
                 model=model,

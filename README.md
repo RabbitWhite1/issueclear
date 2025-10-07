@@ -59,6 +59,7 @@ pip install -r requirements.txt
 #### General Args
 
 - `--limit`: you can use this to limit number of issues you scrape. This is a polite behavior in the Internet.
+- `--sortby created|updated`: choose the field used for incremental ordering and cursors. Use `created` for the very first full ingestion (ensures you enumerate everything once). After an initial full sync finishes, switch to `updated` to skip unchanged historical issues and only process new or recently modified ones. If your initial run was interrupted, keep using `created` until you are confident the historical backlog is complete.
 
 #### Github
 

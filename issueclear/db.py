@@ -69,12 +69,7 @@ def _normalize_user(user_val):
     if isinstance(user_val, str):
         return user_val
     if isinstance(user_val, dict):
-        return (
-            user_val.get("login")
-            or user_val.get("name")
-            or user_val.get("displayName")
-            or ""
-        )
+        return user_val.get("login") or user_val.get("name") or user_val.get("displayName") or ""
     return ""
 
 
@@ -151,10 +146,7 @@ class RepoDatabase:
                 _, existing_updated_at, ex_title, ex_body, ex_state = row
                 inserted = False
                 changed_content = (
-                    (title != ex_title)
-                    or (body != ex_body)
-                    or (state != ex_state)
-                    or (updated_at != existing_updated_at)
+                    (title != ex_title) or (body != ex_body) or (state != ex_state) or (updated_at != existing_updated_at)
                 )
                 if changed_content:
                     conn.execute(
@@ -201,9 +193,7 @@ class RepoDatabase:
             row = cur.fetchone()
             return json.loads(row[0]) if row else None
 
-    def upsert_comment(
-        self, issue_id: str, comment_json: dict
-    ) -> Tuple[int, bool, bool]:
+    def upsert_comment(self, issue_id: str, comment_json: dict) -> Tuple[int, bool, bool]:
         comment_id = comment_json.get("id")
         if comment_id is None:
             raise ValueError("Comment JSON missing 'id'")
@@ -262,9 +252,7 @@ class RepoDatabase:
     def list_issues(self) -> List[dict]:
         """Return minimal metadata for all issues (ordered)."""
         with self.get_conn() as conn:
-            cur = conn.execute(
-                "SELECT number, title, state, updated_at, comments_count FROM issues ORDER BY number ASC"
-            )
+            cur = conn.execute("SELECT number, title, state, updated_at, comments_count FROM issues ORDER BY number ASC")
             return [
                 {
                     "number": n,
