@@ -268,7 +268,8 @@ class RepoDatabase:
         with self.get_conn() as conn:
             issue_count = conn.execute("SELECT COUNT(*) FROM issues").fetchone()[0]
             comment_count = conn.execute("SELECT COUNT(*) FROM comments").fetchone()[0]
-            return {"issues": issue_count, "comments": comment_count}
+            last_sync = self.get_last_issue_sync()
+            return {"issues": issue_count, "comments": comment_count, "last_sync": last_sync}
 
     def get_issues_with_comments(self) -> List[Issue]:
         """Return all issues (including PRs if stored) with attached comments as dataclasses.

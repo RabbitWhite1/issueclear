@@ -107,6 +107,10 @@ class GitHubIssueScraper(IssueScraper):
                 print(f"[{datetime.now()}] Issue {issue_number} not found (404). Maybe jitter. Retry within 10s.")
                 time.sleep(10)
                 continue
+            if resp.status_code == 504:
+                print(f"[{datetime.now()}] Issue {issue_number} 504 timeout. Maybe jitter. Retry within 10s.")
+                time.sleep(10)
+                continue
             if resp.status_code != 200:
                 raise RuntimeError(
                     f"[{datetime.now()}] Failed to list comments for issue {issue_number}: {resp.status_code}, {resp.text}\n"
